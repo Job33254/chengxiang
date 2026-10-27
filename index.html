@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小孔成像：像如何变糊、变亮变暗（侧视角）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0b0e18; color: #e6e9f5;
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 20px 16px 44px; }
+  h1 { font-size: 19px; margin: 0 0 6px; font-weight: 600; }
+  .sub { margin: 0 0 14px; font-size: 13px; color: #8b94b8; line-height: 1.65; }
+  canvas { width: 100%; height: auto; display: block; border-radius: 12px; background: #05060c; }
+  .screen-title {
+    margin: 16px 0 8px; font-size: 13px; color: #9fb0d8;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .screen-title::before { content: '👁'; font-size: 15px; }
+  .controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; margin-top: 16px; align-items: end; }
+  @media (max-width: 640px) { .controls { grid-template-columns: 1fr; } }
+  .ctrl { background: #151a2b; border: 1px solid #222a42; border-radius: 12px; padding: 12px 16px; }
+  .ctrl .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 9px; color: #b6bdd8; }
+  .ctrl .val { color: #6fd3ff; font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px; background: #2b3452; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: #6fd3ff; cursor: pointer; border: 2px solid #0b0e18;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%; background: #6fd3ff;
+    cursor: pointer; border: 2px solid #0b0e18;
+  }
+  button {
+    background: #1b2440; color: #9fd8ff; border: 1px solid #2d3a5e;
+    border-radius: 10px; padding: 12px 18px; font-size: 13px; cursor: pointer;
+    font-family: inherit; white-space: nowrap; transition: background .15s;
+  }
+  button:hover { background: #232f52; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; }
+  @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: #151a2b; border: 1px solid #222a42; border-radius: 12px; padding: 10px 14px; font-size: 12px; color: #8b94b8; }
+  .stat b { display: block; font-size: 18px; color: #6fd3ff; margin-top: 3px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .msg { margin-top: 14px; padding: 13px 16px; background: #151a2b; border: 1px solid #222a42;
+         border-left: 3px solid #6fd3ff; border-radius: 8px; font-size: 13.5px; line-height: 1.8; color: #c3c9e0; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: #8b94b8; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>小孔成像：像如何变糊、变亮变暗（侧视角）</h1>
+  <p class="sub">
+    上图是沿光轴的侧面光路图；下图是<b>站在屏的右侧</b>看到的屏面图案。
+    每个物点在屏上铺成一个光斑，所有光斑叠加就是你看得见的图案。
+    拖动滑块，观察屏上箭头何时还能辨认为“像”，何时糊成亮斑，以及亮度如何变化。
+  </p>
+
+  <canvas id="cv"></canvas>
+
+  <div class="screen-title">从屏的右侧看：屏上实际呈现的图案（含模糊与亮暗）</div>
+  <canvas id="cvScreen"></canvas>
+
+  <div class="controls">
+    <div class="ctrl">
+      <div class="row"><span>屏距 v（孔→屏）</span><span class="val" id="vval">250</span></div>
+      <input type="range" id="vslider" min="40" max="430" value="250" step="1">
+    </div>
+    <div class="ctrl">
+      <div class="row"><span>孔径半径 r</span><span class="val" id="rval">4</span></div>
+      <input type="range" id="rslider" min="1" max="20" value="4" step="0.5">
+    </div>
+    <button id="playBtn">▶ 自动演示</button>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:#ff7a90"></i>物点 A 的光束</span>
+    <span><i class="dot" style="background:#ffcd64"></i>物点 B 的光束</span>
+    <span><i class="dot" style="background:#82e1ff"></i>屏上实际光斑叠加</span>
+    <span><i class="dot" style="background:#3a4566"></i>理想轮廓（虚线）</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">放大率 M = v/u<b id="s-mag">0.83×</b></div>
+    <div class="stat">屏上弥散斑直径<b id="s-blur">—</b></div>
+    <div class="stat">像高 ÷ 斑径（越大越清晰）<b id="s-ratio">—</b></div>
+    <div class="stat">相对亮度 ∝ r²/v²<b id="s-bright">1.00×</b></div>
+  </div>
+
+  <div class="msg" id="msg"></div>
+</div>
+
+<script>
+(function () {
+  // ================= 几何常量 =================
+  const cv  = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const W = 1000, H = 520;
+  cv.width = W; cv.height = H;
+
+  const AXIS_Y   = 270;
+  const HOLE_X   = 430;
+  const OBJ_X    = 130;
+  const U        = HOLE_X - OBJ_X;   // 物距 = 300
+  const OBJ_HALF = 75;
+
+  // ================= 屏视图画布 =================
+  const cvS  = document.getElementById('cvScreen');
+  const ctxS = cvS.getContext('2d');
+  const SW = 1000, SH = 280;
+  cvS.width = SW; cvS.height = SH;
+
+  const P  = { x: 190, y: 18, w: 620, h: 220 };
+  const PCX = P.x + P.w / 2;
+  const PCY = P.y + P.h / 2;
+  const VIEW_HALF = 160;                         // 屏视图垂直半视野（世界单位）
+  const VIEW_FACTOR = P.h / (2 * VIEW_HALF);     // 世界单位 → 像素
+
+  // ================= 高斯光斑 sprite =================
+  function makeGaussSprite(size) {
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const g = c.getContext('2d');
+    const r = size / 2;
+    const grad = g.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0.00, 'rgba(200,240,255,1)');
+    grad.addColorStop(0.25, 'rgba(150,225,255,0.90)');
+    grad.addColorStop(0.55, 'rgba(110,190,240,0.42)');
+    grad.addColorStop(0.80, 'rgba(80,150,220,0.12)');
+    grad.addColorStop(1.00, 'rgba(60,120,200,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, size, size);
+    return c;
+  }
+  const SPRITE = makeGaussSprite(128);
+
+  // ================= 物体采样点 =================
+  // 把物体箭头离散成若干“物点”，每个物点在屏上铺成一个高斯光斑。
+  function buildObjectSamples() {
+    const arr = [];
+    const N = 64;
+    for (let i = 0; i < N; i++) {
+      const ty = (i + 0.5) / N;
+      const y = -OBJ_HALF + ty * 2 * OBJ_HALF;
+      // 箭头形状：尖在 y=-75，尾在 y=+75
+      const headLen = 36, headHalfW = 20, shaftHalfW = 6;
+      let halfW;
+      if (y < -OBJ_HALF + headLen) {
+        halfW = headHalfW * (y + OBJ_HALF) / headLen;
+      } else {
+        halfW = shaftHalfW;
+      }
+      halfW = Math.max(halfW, 1.5);
+      const M = Math.max(1, Math.round(2 * halfW / 3.5));
+      for (let j = 0; j < M; j++) {
+        const tx = (j + 0.5) / M;
+        const x = (tx * 2 - 1) * halfW;
+        arr.push({ x, y });
+      }
+    }
+    return arr;
+  }
+  const OBJECT_SAMPLES = buildObjectSamples();
+
+  // ================= 控件 =================
+  const vSlider = document.getElementById('vslider');
+  const rSlider = document.getElementById('rslider');
+  const vVal = document.getElementById('vval');
+  const rVal = document.getElementById('rval');
+  const sMag = document.getElementById('s-mag');
+  const sBlur = document.getElementById('s-blur');
+  const sRatio = document.getElementById('s-ratio');
+  const sBright = document.getElementById('s-bright');
+  const msgEl = document.getElementById('msg');
+  const playBtn = document.getElementById('playBtn');
+
+  // ================= 箭头路径（光路图用） =================
+  function arrowPath(c, x, yTip, yTail, w) {
+    const dir = (yTail > yTip) ? 1 : -1;
+    const L = Math.abs(yTail - yTip);
+    if (L < 1) return;
+    const hw = w * 2.4;
+    const hl = Math.min(L * 0.4, hw * 2.4);
+    c.beginPath();
+    c.moveTo(x, yTip);
+    c.lineTo(x + hw, yTip + dir * hl);
+    c.lineTo(x + w,  yTip + dir * hl);
+    c.lineTo(x + w,  yTail);
+    c.lineTo(x - w,  yTail);
+    c.lineTo(x - w,  yTip + dir * hl);
+    c.lineTo(x - hw, yTip + dir * hl);
+    c.closePath();
+  }
+
+  // ================= 主光路图 =================
+  function renderOptical(v, r, xs, m, R, t) {
+    ctx.fillStyle = '#05060c';
+    ctx.fillRect(0, 0, W, H);
+
+    // 光轴
+    ctx.save();
+    ctx.setLineDash([5, 8]);
+    ctx.strokeStyle = 'rgba(130,150,210,0.16)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(20, AXIS_Y); ctx.lineTo(W - 20, AXIS_Y); ctx.stroke();
+    ctx.restore();
+
+    // 挡板
+    ctx.fillStyle = '#2c3352';
+    ctx.fillRect(HOLE_X - 6, 0, 12, AXIS_Y - r);
+    ctx.fillRect(HOLE_X - 6, AXIS_Y + r, 12, H - AXIS_Y - r);
+
+    // 光屏
+    ctx.fillStyle = 'rgba(90,110,170,0.16)';
+    ctx.fillRect(xs, 0, 6, H);
+    ctx.fillStyle = 'rgba(120,145,210,0.55)';
+    ctx.fillRect(xs, 0, 1.5, H);
+
+    // 两条代表光束
+    const samples = [
+      { py: AXIS_Y - OBJ_HALF, col: '255,110,140' },
+      { py: AXIS_Y + OBJ_HALF, col: '255,205,100' },
+    ];
+    const hy1 = AXIS_Y - r, hy2 = AXIS_Y + r;
+    for (const s of samples) {
+      const py = s.py;
+      const yA = py + t * (hy1 - py);
+      const yB = py + t * (hy2 - py);
+
+      ctx.beginPath();
+      ctx.moveTo(OBJ_X, py);
+      ctx.lineTo(xs, yA);
+      ctx.lineTo(xs, yB);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${s.col},0.075)`;
+      ctx.fill();
+
+      ctx.strokeStyle = `rgba(${s.col},0.40)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(OBJ_X, py); ctx.lineTo(xs, yA);
+      ctx.moveTo(OBJ_X, py); ctx.lineTo(xs, yB);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(${s.col},0.90)`;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(xs + 3, Math.min(yA, yB));
+      ctx.lineTo(xs + 3, Math.max(yA, yB));
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+
+    // 屏上的实际像：用物体采样点的高斯光斑叠加
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const aRoute = Math.min(1, 0.11 * (550 * 550) / ((U + v) * (U + v)));
+    const Rshow = Math.max(R, 0.7);
+    for (let i = 0; i < OBJECT_SAMPLES.length; i += 6) {
+      const s = OBJECT_SAMPLES[i];
+      const yS = AXIS_Y - m * s.y;
+      const xS = xs + 3 + m * s.x * 0.25;
+      ctx.globalAlpha = aRoute;
+      ctx.drawImage(SPRITE, xS - Rshow, yS - Rshow, 2 * Rshow, 2 * Rshow);
+    }
+    ctx.restore();
+
+    // 物体
+    ctx.fillStyle = '#ff7a90';
+    arrowPath(ctx, OBJ_X, AXIS_Y - OBJ_HALF, AXIS_Y + OBJ_HALF, 5);
+    ctx.fill();
+
+    // 小孔高亮
+    ctx.fillStyle = 'rgba(110,200,255,0.35)';
+    ctx.fillRect(HOLE_X - 6, AXIS_Y - r, 12, Math.max(2 * r, 2));
+
+    // 标注
+    ctx.font = '13px system-ui, "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,122,144,0.85)';
+    ctx.fillText('物', OBJ_X, AXIS_Y + OBJ_HALF + 26);
+    ctx.fillStyle = 'rgba(110,200,255,0.8)';
+    ctx.fillText('小孔', HOLE_X, AXIS_Y - r - 16);
+    ctx.fillStyle = 'rgba(150,175,235,0.8)';
+    ctx.fillText('屏', xs + 3, 26);
+
+    // 观察方向
+    ctx.textAlign = 'left';
+    ctx.font = '12px system-ui, "PingFang SC", sans-serif';
+    ctx.fillStyle = 'rgba(130,225,255,0.55)';
+    ctx.fillText('👁 观察方向（从右往左看屏）', W - 235, 22);
+  }
+
+  // ================= 屏视图 =================
+  function renderScreen(v, r, m, R) {
+    ctxS.clearRect(0, 0, SW, SH);
+    ctxS.fillStyle = '#05060c';
+    ctxS.fillRect(0, 0, SW, SH);
+
+    // 面板背景
+    ctxS.fillStyle = '#080d1a';
+    ctxS.fillRect(P.x, P.y, P.w, P.h);
+
+    // 光轴参考线
+    ctxS.save();
+    ctxS.setLineDash([4, 7]);
+    ctxS.strokeStyle = 'rgba(120,140,200,0.14)';
+    ctxS.lineWidth = 1;
+    ctxS.beginPath();
+    ctxS.moveTo(P.x + 8, PCY);
+    ctxS.lineTo(P.x + P.w - 8, PCY);
+    ctxS.stroke();
+    ctxS.restore();
+
+    // 理想像轮廓（虚线）
+    const imgHalfWorld = OBJ_HALF * m;
+    const tipY  = PCY + imgHalfWorld * VIEW_FACTOR;
+    const tailY = PCY - imgHalfWorld * VIEW_FACTOR;
+    const headLenPx  = 36 * m * VIEW_FACTOR;
+    const headHalfPx = 20 * m * VIEW_FACTOR;
+    const shaftHalfPx = 6 * m * VIEW_FACTOR;
+
+    if (imgHalfWorld * VIEW_FACTOR > 3) {
+      ctxS.save();
+      ctxS.setLineDash([4, 4]);
+      ctxS.strokeStyle = 'rgba(130,225,255,0.22)';
+      ctxS.lineWidth = 1;
+      ctxS.beginPath();
+      ctxS.moveTo(PCX, tipY);
+      ctxS.lineTo(PCX - headHalfPx, tipY - headLenPx);
+      ctxS.lineTo(PCX - shaftHalfPx, tipY - headLenPx);
+      ctxS.lineTo(PCX - shaftHalfPx, tailY);
+      ctxS.lineTo(PCX + shaftHalfPx, tailY);
+      ctxS.lineTo(PCX + shaftHalfPx, tipY - headLenPx);
+      ctxS.lineTo(PCX + headHalfPx, tipY - headLenPx);
+      ctxS.closePath();
+      ctxS.stroke();
+      ctxS.restore();
+    }
+
+    // 实际光斑叠加
+    ctxS.save();
+    ctxS.beginPath();
+    ctxS.rect(P.x + 1, P.y + 1, P.w - 2, P.h - 2);
+    ctxS.clip();
+    ctxS.globalCompositeOperation = 'lighter';
+
+    // 单点峰值亮度 ∝ 1/(u+v)²（物理上保证：总照度 ∝ r²/v²）
+    const alphaBase = Math.min(1, 0.085 * (550 * 550) / ((U + v) * (U + v)));
+    const Rview = Math.max(R * VIEW_FACTOR, 0.6);
+
+    for (const s of OBJECT_SAMPLES) {
+      const yScreenWorld = -m * s.y;
+      const xScreenWorld = m * s.x;
+      const xView = PCX + xScreenWorld * VIEW_FACTOR;
+      const yView = PCY + yScreenWorld * VIEW_FACTOR;
+      ctxS.globalAlpha = alphaBase;
+      ctxS.drawImage(SPRITE, xView - Rview, yView - Rview, 2 * Rview, 2 * Rview);
+    }
+    ctxS.restore();
+
+    // 面板边框
+    ctxS.strokeStyle = '#1d2742';
+    ctxS.lineWidth = 1.5;
+    ctxS.strokeRect(P.x, P.y, P.w, P.h);
+
+    // 状态判断（只做文字提示）
+    const ratio = (2 * OBJ_HALF * m) / (2 * R);
+    let label, color;
+    if (ratio > 3.5)      { label = '可辨认的像';     color = '#5ee6a8'; }
+    else if (ratio > 1.6) { label = '过渡：像在变糊';   color = '#ffcd64'; }
+    else                  { label = '已糊成光斑';     color = '#ff7a90'; }
+
+    // 左上标题
+    ctxS.font = '13px system-ui, "PingFang SC", sans-serif';
+    ctxS.textAlign = 'left';
+    ctxS.fillStyle = '#6b7390';
+    ctxS.fillText('屏面实际图案', 30, 36);
+    ctxS.fillStyle = '#454e6e';
+    ctxS.font = '12px system-ui, "PingFang SC", sans-serif';
+    ctxS.fillText('虚线 = 理想轮廓', 30, 58);
+    ctxS.fillText('发光 = 实际光斑叠加', 30, 76);
+
+    // 状态标签
+    ctxS.font = 'bold 15px system-ui, "PingFang SC", sans-serif';
+    ctxS.fillStyle = color;
+    ctxS.fillText('● ' + label, P.x, P.y - 8);
+
+    // 右侧数据
+    const infoX = P.x + P.w + 24;
+    ctxS.font = '13px system-ui, "PingFang SC", sans-serif';
+    ctxS.fillStyle = '#8b94b8';
+    ctxS.fillText('像高', infoX, P.y + 44);
+    ctxS.fillStyle = '#c3c9e0';
+    ctxS.fillText((2 * OBJ_HALF * m).toFixed(0) + ' px', infoX + 58, P.y + 44);
+
+    ctxS.fillStyle = '#8b94b8';
+    ctxS.fillText('斑径', infoX, P.y + 72);
+    ctxS.fillStyle = '#c3c9e0';
+    ctxS.fillText((2 * R).toFixed(1) + ' px', infoX + 58, P.y + 72);
+
+    ctxS.fillStyle = '#8b94b8';
+    ctxS.fillText('比值', infoX, P.y + 100);
+    ctxS.fillStyle = color;
+    ctxS.fillText(ratio.toFixed(1) + ' : 1', infoX + 58, P.y + 100);
+
+    // 底部说明
+    ctxS.textAlign = 'center';
+    ctxS.font = '12px system-ui, "PingFang SC", sans-serif';
+    ctxS.fillStyle = '#6b7390';
+    ctxS.fillText('屏越近 → 像越小、越亮（可能过曝成团）；屏越远 → 像越大、越暗；孔越大 → 光斑越大、越糊。',
+                  PCX, P.y + P.h + 26);
+  }
+
+  // ================= 总渲染 =================
+  function render() {
+    const v = parseFloat(vSlider.value);
+    const r = parseFloat(rSlider.value);
+    const xs = HOLE_X + v;
+    const m  = v / U;
+    const R  = r * (1 + v / U);   // 屏上弥散斑半径（世界单位）
+    const t  = (xs - OBJ_X) / U;
+
+    renderOptical(v, r, xs, m, R, t);
+    renderScreen(v, r, m, R);
+
+    // 读数
+    const imgH = 2 * OBJ_HALF * m;
+    const spotD = 2 * R;
+    vVal.textContent = v.toFixed(0);
+    rVal.textContent = r.toFixed(1);
+    sMag.textContent = m.toFixed(2) + '×';
+    sBlur.textContent = spotD.toFixed(1) + ' px';
+    sRatio.textContent = (imgH / spotD).toFixed(1) + ' : 1';
+
+    const bright = (r / 4) * (r / 4) * (250 / v) * (250 / v);
+    sBright.textContent = bright.toFixed(2) + '×';
+
+    // 提示
+    let a;
+    if (v < 90)       a = '屏离孔很近：像缩得很小，可每个物点的光斑几乎不变小，相对模糊极大；同时照度 ∝ 1/v² 很大，屏上容易过曝成一个小亮团。';
+    else if (v > 330) a = '屏离孔较远：像放大了，但每个物点的弥散斑也同步放大；照度 ∝ 1/v² 下降，屏上整体变暗。';
+    else              a = '屏在中距离：像的尺寸和弥散斑都处于中间水平，亮度适中。';
+
+    let b;
+    if (r > 12)      b = '孔径很大 → 每个物点铺成一个大光斑，相邻物点的斑严重重叠，细节被抹平；但通过的光多，整体更亮。';
+    else if (r < 3)  b = '孔径很小 → 光斑小，像清晰；但通过的光少，整体更暗（真实物理中孔再小还会受衍射限制，本演示未计入）。';
+    else             b = '孔径适中 → 光斑不大，投影像可辨认。';
+
+    msgEl.textContent = a + ' ' + b;
+  }
+
+  // ================= 自动演示 =================
+  let animId = null, dir = 1;
+  function stopAnim() {
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+    playBtn.textContent = '▶ 自动演示';
+  }
+  function startAnim() {
+    playBtn.textContent = '⏸ 暂停';
+    let last = 0;
+    const step = (ts) => {
+      if (ts - last > 28) {
+        last = ts;
+        let v = parseFloat(vSlider.value) + dir * 1.4;
+        const mn = parseFloat(vSlider.min), mx = parseFloat(vSlider.max);
+        if (v >= mx) { v = mx; dir = -1; }
+        if (v <= mn) { v = mn; dir = 1; }
+        vSlider.value = v;
+        render();
+      }
+      animId = requestAnimationFrame(step);
+    };
+    animId = requestAnimationFrame(step);
+  }
+  playBtn.addEventListener('click', () => {
+    if (animId) stopAnim(); else startAnim();
+  });
+
+  vSlider.addEventListener('input', () => { stopAnim(); render(); });
+  rSlider.addEventListener('input', () => { stopAnim(); render(); });
+
+  render();
+})();
+</script>
+</body>
+</html>
